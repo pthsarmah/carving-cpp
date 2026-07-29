@@ -2,15 +2,8 @@
 #include <print>
 
 int main() {
-	Vector<int> v;
+	Vector<int> v = {5, 4, 3, 2, 1};
 	std::println("Size: {}\nCapacity: {}\n", v.size(), v.capacity());
-
-	v.push_back(5);
-	v.push_back(4);
-	v.push_back(3);
-	v.push_back(2);
-	v.push_back(1);
-	v.push_back(0);
 
 	std::println("at: {}", v.at(2));
 	std::println("front: {}", v.front());

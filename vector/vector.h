@@ -1,7 +1,9 @@
 #pragma once
 
+#include <algorithm>
 #include <any>
 #include <cstddef>
+#include <initializer_list>
 #include <iterator>
 #include <memory>
 #include <stdexcept>
@@ -105,6 +107,12 @@ public:
 public:
 	//default constructor
 	Vector() { realloc(2); }
+	Vector(std::initializer_list<T> list) {
+		capacity_ = list.size();
+		realloc(capacity_);
+		size_ = list.size();
+		std::copy(list.begin(), list.end(), data_.get());
+	}
 	//copy constructor
 	Vector(const Vector& other): size_(other.size_), capacity_(other.capacity_), data_(capacity_ ? std::make_unique<T[]>(capacity_) : nullptr) {
 		for (std::size_t i=0; i < size_; i++) {
