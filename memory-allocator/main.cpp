@@ -8,6 +8,11 @@ int main() {
 	std::println("{:p}", ptr);
 
 	arena.debug();
+	arena.free_list();
+
+	arena.deallocate(ptr);
+
+	arena.free_list();
 
 	return 0;
 }
