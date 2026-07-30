@@ -3,9 +3,7 @@
 
 int main() {
 	Arena arena(1024);
-
-	void* ptr = arena.allocate(500, 16);
-	void* tptr = arena.allocate(12, 16);
+	void* ptr = arena.allocate(512, 16);
 
 	std::println("{:p}", ptr);
 

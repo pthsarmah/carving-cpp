@@ -6,6 +6,17 @@
 #include <print>
 #include <stdexcept>
 
+struct Block {
+public:
+	std::size_t size_;
+	bool is_free;
+};
+
+struct FreeNode {
+	Block data;
+	FreeNode* next;
+};
+
 class Arena {
 private:
 	char* start_; //char is 1 byte so good ol' byte-addressable memory
@@ -43,19 +54,28 @@ public:
 			throw std::out_of_range("Out of memory");
 		}
 
-		void* ptr = aligned;
-		current_ = aligned + size;
-		return ptr;
+		Block* header = reinterpret_cast<Block*>(aligned);
+		
+		header->size_ = size;
+		header->is_free = false;
 
+		void* user = reinterpret_cast<char*>(header) + sizeof(Block);
+		current_ = reinterpret_cast<char*>(user) + size;
+		return user;
 	}
 	void* allocate(std::size_t size) {
 		if (current_ + size > end_) {
 			throw std::out_of_range("Out of memory");
 		}
 
-		void* ptr = current_;
-		current_ += size;
-		return ptr;
+		Block* header = reinterpret_cast<Block*>(current_);
+		header->is_free = false;
+		header->size_ = size;
+
+		void* user = reinterpret_cast<char*>(header) + sizeof(Block);
+		current_ = reinterpret_cast<char*>(user) + size;
+
+		return user;
 	}
 	void reset() {
 		current_ = start_;
