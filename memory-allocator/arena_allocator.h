@@ -9,8 +9,8 @@
 struct Block {
 public:
 	std::size_t size_;
-	bool is_free;
-	Block* next;
+	Block* next = nullptr;
+	bool is_free = 1;
 };
 
 class Arena {
@@ -30,8 +30,35 @@ private:
 			curr->next = ptr;
 		}
 	}
-	void remove_free_node(std::size_t size) {
+	Block* best_fit_free_node(std::size_t size) {
+		//sequential search to find best fit node
+		if (free_ptr_ == nullptr) return nullptr;
+		Block* curr = free_ptr_;
+		Block* best = nullptr;
+		
+		std::size_t req_size = size;
 
+		while (curr != nullptr) {
+			if (curr->size_ >= req_size) {
+				if (best != nullptr && curr->size_ <= best->size_)
+					best = curr;
+				else if (best == nullptr) best = curr;
+			}
+			curr = curr->next;
+		}
+		return best;
+	}
+	void* allocate_free_node(std::size_t size) {
+		if (free_ptr_ == nullptr) throw std::out_of_range("Out of memory");
+		
+		Block* req = best_fit_free_node(size);
+		if (req == nullptr) throw std::out_of_range("No available free blocks");
+		req->size_ = size;
+		req->is_free = false;
+
+		void* user = reinterpret_cast<char*>(req) + sizeof(Block);
+
+		return user;
 	}
 public:
 	Arena(const Arena& arena) = delete;	
@@ -64,7 +91,8 @@ public:
 		char* aligned = reinterpret_cast<char*>(addr);
 
 		if (aligned + size > end_) {
-			throw std::out_of_range("Out of memory.");
+			//allocate from free nodes, if present
+			return allocate_free_node(size);
 		}
 
 		Block* header = reinterpret_cast<Block*>(aligned);
@@ -92,7 +120,19 @@ public:
 		}
 	}
 	void debug() const {
-		if (end_ >= current_)
-			std::println("Memory left: {} bytes", end_ - current_);
+		std::size_t extra_size = 0;
+
+		if (free_ptr_ != nullptr) {
+			Block* curr = free_ptr_;
+			while (curr != nullptr) {
+					if (curr->is_free) extra_size += curr->size_;
+					curr = curr->next;
+			}
+		}
+
+		if (end_ >= current_) {
+			auto remaining = static_cast<std::size_t>(end_ - current_);
+			std::println("Memory left: {} bytes", remaining + extra_size);
+		}
 	}
 };
