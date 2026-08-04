@@ -1,12 +1,12 @@
 #include "arena_allocator.h"
 
 int main() {
-	Arena arena(96);
+	Arena arena(128);
 
-	void* ptrs[3];
+	void* ptrs[2];
 
 	for (void*& p : ptrs) {
-		p = arena.allocate(5);
+		p = arena.allocate(30);
 		arena.debug();
 	}
 
@@ -14,7 +14,7 @@ int main() {
 	arena.deallocate(ptrs[1]);
 
 	arena.debug();
-	arena.allocate(5);
+	arena.allocate(6);
 
 	arena.debug();
 

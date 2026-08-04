@@ -48,15 +48,39 @@ private:
 		}
 		return best;
 	}
+	void clean_free_list() {
+		Block** link = &free_ptr_;
+
+		while (*link != nullptr) {
+			if (!(*link)->is_free) {
+				*link = (*link)->next;
+			} else {
+				link = &(*link)->next;
+			}
+		}
+	}
 	void* allocate_free_node(std::size_t size) {
 		if (free_ptr_ == nullptr) throw std::out_of_range("Out of memory");
 		
 		Block* req = best_fit_free_node(size);
 		if (req == nullptr) throw std::out_of_range("No available free blocks");
+
+		//resize block if needed
+		std::size_t diff = req->size_ - size; 
+		if (diff > sizeof(Block) + 1) {
+			Block* resized = reinterpret_cast<Block*>(reinterpret_cast<char*>(req) + size);
+			resized->size_ = diff;
+			resized->is_free = true;
+			resized->next = req->next;
+			req->next = resized;
+		}
+
 		req->size_ = size;
 		req->is_free = false;
 
 		void* user = reinterpret_cast<char*>(req) + sizeof(Block);
+
+		clean_free_list();
 
 		return user;
 	}
@@ -71,14 +95,10 @@ public:
 		delete[] start_;
 	}
 	void* allocate(std::size_t size, int alignment = 16) {
-		switch (alignment) {
-			case 16:
-			case 32:
-			case 64:
-					break;
-			default:
-					throw std::runtime_error("wrong alignment option");
-		}
+		if (alignment <= 0)
+			throw std::runtime_error("alignment is not positive");
+		if ((alignment & (alignment - 1)) != 0)
+			throw std::runtime_error("alignment must be power of 2");
 
 		//apparently I have misunderstood pointers = integers, which is wrong, pointers are their own inherent type, so they need to be converted to integers to do bit manipulation
 		std::uintptr_t addr = reinterpret_cast<std::uintptr_t>(current_);
