@@ -8,7 +8,7 @@
 
 struct Block {
 public:
-	std::size_t size_;
+	std::size_t block_size_;
 	Block* next = nullptr;
 	bool is_free = 1;
 };
@@ -39,8 +39,8 @@ private:
 		std::size_t req_size = size;
 
 		while (curr != nullptr) {
-			if (curr->size_ >= req_size) {
-				if (best != nullptr && curr->size_ <= best->size_)
+			if (curr->block_size_ >= req_size) {
+				if (best != nullptr && curr->block_size_ <= best->block_size_)
 					best = curr;
 				else if (best == nullptr) best = curr;
 			}
@@ -59,33 +59,49 @@ private:
 			}
 		}
 	}
-	void* allocate_free_node(std::size_t size) {
+	void* allocate_free_node(std::size_t size, std::size_t alignment) {
 		if (free_ptr_ == nullptr) throw std::out_of_range("Out of memory");
-		
-		Block* req = best_fit_free_node(size);
+
+		Block* req = best_fit_free_node(size + sizeof(Block));
 		if (req == nullptr) throw std::out_of_range("No available free blocks");
 
-		//resize block if needed
-		std::size_t diff = req->size_ - size; 
-		if (diff > sizeof(Block) + 1) {
-			Block* resized = reinterpret_cast<Block*>(reinterpret_cast<char*>(req) + size);
-			resized->size_ = diff;
+		std::size_t total_req = size + sizeof(Block);
+
+		if (req->block_size_ <= total_req + sizeof(Block)) {
+			req->is_free = false;
+			clean_free_list();
+			return reinterpret_cast<char*>(req) + sizeof(Block);
+		}
+
+		char* split_start = reinterpret_cast<char*>(req) + total_req;
+
+		std::uintptr_t user_addr =
+			(reinterpret_cast<std::uintptr_t>(split_start + sizeof(Block)) + alignment - 1) &
+			~static_cast<std::uintptr_t>(alignment - 1);
+
+		Block* resized = reinterpret_cast<Block*>(user_addr - sizeof(Block));
+
+		std::size_t padding = reinterpret_cast<char*>(resized) - split_start;
+		std::size_t resized_size = req->block_size_ - total_req - padding;
+
+		if (resized_size >= sizeof(Block) + 1) {
+			resized->block_size_ = resized_size;
 			resized->is_free = true;
 			resized->next = req->next;
 			req->next = resized;
+
+			req->block_size_ = total_req;
+		} else {
+			req->block_size_ = req->block_size_;
 		}
 
-		req->size_ = size;
 		req->is_free = false;
-
-		void* user = reinterpret_cast<char*>(req) + sizeof(Block);
-
 		clean_free_list();
 
-		return user;
+		return reinterpret_cast<char*>(req) + sizeof(Block);
 	}
 public:
-	Arena(const Arena& arena) = delete;	
+	Arena(const Arena& arena) = delete;
 	Arena(std::size_t size) {
 		start_ = new char[size];
 		end_ = start_ + size; // end_ is 1 byte BEYOND the address boundary
@@ -100,42 +116,39 @@ public:
 		if ((alignment & (alignment - 1)) != 0)
 			throw std::runtime_error("alignment must be power of 2");
 
-		//apparently I have misunderstood pointers = integers, which is wrong, pointers are their own inherent type, so they need to be converted to integers to do bit manipulation
-		std::uintptr_t addr = reinterpret_cast<std::uintptr_t>(current_);
-		//bit math to align the pointer to the next greatest multiple of the alignment factor
-		addr = (addr + alignment - 1) & ~(alignment - 1);
-		//taking in unaligned space in block, as part of internal fragmentation
-		//so size = header size + user data size + alignment padding
-		size = (size + sizeof(Block) + alignment - 1) & ~(alignment - 1);
+		//I was aligning the header pointer first and appending the block afterwards, immediately starting the user pointer, which means user pointer is not guaranteed to be aligned. Allocators prefer aligning the user pointer and adding the header before it
+		std::uintptr_t raw = reinterpret_cast<std::uintptr_t>(current_) + sizeof(Block);
+		std::uintptr_t user_addr = (raw + alignment - 1) & ~(static_cast<std::uintptr_t>(alignment - 1));
+		Block* header = reinterpret_cast<Block*>(user_addr - sizeof(Block));
 
-		char* aligned = reinterpret_cast<char*>(addr);
+		std::size_t total_size = (user_addr - reinterpret_cast<std::uintptr_t>(current_)) + size;
 
-		if (aligned + size > end_) {
-			//allocate from free nodes, if present
-			return allocate_free_node(size);
+		if (reinterpret_cast<char*>(header) + total_size > end_) {
+			return allocate_free_node(size, alignment);
 		}
 
-		Block* header = reinterpret_cast<Block*>(aligned);
-		
-		header->size_ = size;
+		header->block_size_ = size + sizeof(Block);
+		header->is_free = false;
+		header->next = nullptr;
 
-		void* user = reinterpret_cast<char*>(header) + sizeof(Block);
-		current_ = reinterpret_cast<char*>(header) + size;
-		return user;
+		current_ = reinterpret_cast<char*>(current_) + total_size;
+		return reinterpret_cast<void*>(user_addr);
 	}
 	void deallocate(void* ptr) {
 		Block* header = reinterpret_cast<Block*>(reinterpret_cast<char*>(ptr) - sizeof(Block));
+		if (header->is_free) {
+			header->next = nullptr;
+			return;
+		}
 		header->is_free = true;
+		header->next = nullptr;
 		add_free_node(header);
-	}
-	void reset() {
-		current_ = start_;
-	}
+	}	
 	void free_list() const {
 		if (free_ptr_ == nullptr) return;
 		Block* curr = free_ptr_;
 		while (curr != nullptr) {
-			std::println("{}, Size: {}", static_cast<void*>(curr), curr->size_);
+			std::println("{}, Size: {}", static_cast<void*>(curr), curr->block_size_);
 			curr = curr->next;
 		}
 	}
@@ -145,7 +158,7 @@ public:
 		if (free_ptr_ != nullptr) {
 			Block* curr = free_ptr_;
 			while (curr != nullptr) {
-					if (curr->is_free) extra_size += curr->size_;
+					if (curr->is_free) extra_size += curr->block_size_;
 					curr = curr->next;
 			}
 		}

@@ -1,7 +1,7 @@
 #include "arena_allocator.h"
 
 int main() {
-	Arena arena(128);
+	Arena arena(150);
 
 	void* ptrs[2];
 
