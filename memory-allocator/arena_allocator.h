@@ -59,6 +59,33 @@ private:
 			}
 		}
 	}
+	void join_free_nodes(Block* curr, Block* next, std::size_t alignment) {
+		if (curr == nullptr || next == nullptr)
+			return;
+
+
+		if (curr->is_free && next->is_free) {
+			char* curr_end = reinterpret_cast<char*>(curr) + curr->block_size_;
+			char* expected_next = reinterpret_cast<char*>(reinterpret_cast<std::uintptr_t>((curr_end + alignment - 1)) & ~(static_cast<std::uintptr_t>(alignment - 1)));
+
+			if (expected_next == reinterpret_cast<char*>(next)) {
+				curr->block_size_ =
+						reinterpret_cast<char*>(next) + next->block_size_ -
+						reinterpret_cast<char*>(curr);
+
+				curr->next = next->next;
+
+				next->next = nullptr;
+				next->block_size_ = 0;
+				next->is_free = false;
+
+				join_free_nodes(curr, curr->next, alignment);
+				return;
+			}
+		}
+
+		join_free_nodes(next, next->next, alignment);
+	}
 	void* allocate_free_node(std::size_t size, std::size_t alignment) {
 		if (free_ptr_ == nullptr) throw std::out_of_range("Out of memory");
 
@@ -70,6 +97,10 @@ private:
 		if (req->block_size_ <= total_req + sizeof(Block)) {
 			req->is_free = false;
 			clean_free_list();
+			
+			if (free_ptr_ && free_ptr_->next)
+				join_free_nodes(free_ptr_, free_ptr_->next, alignment);
+
 			return reinterpret_cast<char*>(req) + sizeof(Block);
 		}
 
@@ -97,6 +128,7 @@ private:
 
 		req->is_free = false;
 		clean_free_list();
+		join_free_nodes(free_ptr_, free_ptr_->next, alignment);
 
 		return reinterpret_cast<char*>(req) + sizeof(Block);
 	}
@@ -142,13 +174,13 @@ public:
 		}
 		header->is_free = true;
 		header->next = nullptr;
+		
 		add_free_node(header);
 	}	
 	void free_list() const {
 		if (free_ptr_ == nullptr) return;
 		Block* curr = free_ptr_;
 		while (curr != nullptr) {
-			std::println("{}, Size: {}", static_cast<void*>(curr), curr->block_size_);
 			curr = curr->next;
 		}
 	}
